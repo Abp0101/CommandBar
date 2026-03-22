@@ -4,7 +4,7 @@
 
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-blue)
 ![Swift 5.9](https://img.shields.io/badge/Swift-5.9-orange)
-![Powered by Claude](https://img.shields.io/badge/AI-Claude%20Sonnet-purple)
+![Powered by Ollama](https://img.shields.io/badge/AI-Ollama-black)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green)
 
 ---
@@ -25,10 +25,11 @@
 
 - **⌘⌥A** summons the bar from anywhere — no Dock icon, no switching apps
 - Full-width **liquid-glass overlay** (NSVisualEffectView behind-window blur)
-- **Streaming AI answers** via Claude — text appears as it's generated
+- **Streaming AI answers** via Ollama — text appears as it's generated
 - **Action planner** — multi-step confirmation with live step progress
 - **Saved workflows** — name any sequence and trigger it by phrase
 - **Keyboard-first** — Tab, ⎋, ↵ handle everything; no mouse required
+- **100% local** — no API keys, no data leaves your machine
 
 ---
 
@@ -36,52 +37,46 @@
 
 - macOS 14 Sonoma or later
 - Xcode 15+
-- [Anthropic API key](https://console.anthropic.com)
+- [Ollama](https://ollama.com) running locally
 
 ---
 
 ## Setup
 
-### 1. Clone
+### 1. Install Ollama
+
+Download from [ollama.com](https://ollama.com) and pull a model:
 
 ```bash
-git clone https://github.com/yourusername/CommandBar.git
+ollama pull llama3
+```
+
+Make sure Ollama is running — it listens on `localhost:11434` by default.
+
+### 2. Clone
+
+```bash
+git clone https://github.com/Abp0101/CommandBar.git
 cd CommandBar
 ```
 
-### 2. Open in Xcode
+### 3. Build and run
+
+```bash
+swift build
+.build/debug/CommandBar
+```
+
+Or open in Xcode:
 
 ```bash
 open Package.swift
 ```
 
-Xcode will resolve the package and show the project.
+### 4. Grant permissions
 
-### 3. Set your scheme target
-
-Make sure the **CommandBar** executable target is selected in the scheme picker.
-
-### 4. Add your API key
-
-Option A — Preferences UI (easiest):  
-Run the app, click the menu bar icon → **Preferences → API**, paste your key.
-
-Option B — Environment variable (for development):  
-In Xcode, edit the scheme → Run → Arguments → Environment Variables:
-```
-ANTHROPIC_API_KEY = sk-ant-xxxxxxxx
-```
-
-### 5. Grant permissions
-
-On first launch, macOS will ask for **Accessibility** access (needed for the global hotkey).  
+On first launch, macOS will ask for **Accessibility** access (needed for the global hotkey).
 Go to **System Settings → Privacy & Security → Accessibility** and enable CommandBar.
-
-### 6. Build and run
-
-```
-⌘R
-```
 
 Then press **⌘⌥A** anywhere to summon the bar.
 
@@ -97,10 +92,10 @@ Sources/CommandBar/
 ├── CommandBarWindowController.swift NSPanel subclass — full-width, above all windows
 ├── CommandBarView.swift             SwiftUI UI — state machine, text input, animations
 ├── ActionStep.swift                 Model for a single plan step + status enum
-├── AIService.swift                  Claude API: intent classification + streaming answers + step generation
+├── AIService.swift                  Ollama API client — intent classification + streaming answers
 ├── ActionExecutor.swift             NSWorkspace / NSAppleScript execution engine
 ├── WorkflowStore.swift              JSON-persisted reusable command sequences
-├── SettingsView.swift               Preferences: General, API key, Workflows
+├── SettingsView.swift               Preferences: General, Workflows
 └── Resources/
     └── Info.plist                   LSUIElement=YES, Accessibility usage strings
 ```
@@ -128,8 +123,6 @@ RegisterEventHotKey(
 )
 ```
 
-A GUI hotkey picker is on the roadmap.
-
 ---
 
 ## Adding new action handlers
@@ -149,12 +142,10 @@ Then implement the handler using `NSWorkspace`, `NSAppleScript`, or a shell comm
 ## Roadmap
 
 - [ ] GUI hotkey picker in Preferences
-- [ ] Keychain storage for API key (vs UserDefaults)
 - [ ] Context awareness — inject selected text automatically
 - [ ] Frontmost app context (pass active app to AI for smarter answers)
 - [ ] Command history with fuzzy search (↑ / ↓ to cycle)
 - [ ] Plugin API for custom Swift action handlers
-- [ ] Local model support via Ollama
 - [ ] Workflow recorder — "watch what I do" → save as workflow
 - [ ] iCloud sync for workflows across Macs
 - [ ] Inline image support (screenshots as context)
@@ -167,7 +158,7 @@ Then implement the handler using `NSWorkspace`, `NSAppleScript`, or a shell comm
 |-----------|-----|
 | Accessibility | Registering the global ⌘⌥A hotkey |
 | Automation / Apple Events | Controlling apps via AppleScript |
-| Network | Calling the Anthropic API |
+| Network | Talking to local Ollama server |
 
 CommandBar never reads your screen, keystrokes, or files unless you explicitly ask it to perform an action involving them.
 
