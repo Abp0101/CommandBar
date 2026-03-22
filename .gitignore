@@ -34,3 +34,4 @@ Icon?
 .env
 *.env
 secrets.json
+CLAUDE.md
