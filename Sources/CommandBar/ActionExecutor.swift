@@ -43,32 +43,52 @@ final class ActionExecutor {
     // MARK: - Concrete actions
 
     private func openApp(named name: String) async {
-        await MainActor.run {
-            let ws = NSWorkspace.shared
-            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ws = NSWorkspace.shared
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
 
-            // Try bundle ID map first
-            if let bid = knownBundleID(for: trimmed),
-               let url = ws.urlForApplication(withBundleIdentifier: bid) {
-                ws.openApplication(at: url, configuration: .init(), completionHandler: nil)
+        // 1. Try bundle ID map
+        if let bid = knownBundleID(for: trimmed),
+           let url = await MainActor.run(body: { ws.urlForApplication(withBundleIdentifier: bid) }) {
+            await MainActor.run { ws.openApplication(at: url, configuration: .init(), completionHandler: nil) }
+            return
+        }
+
+        // 2. Try Spotlight — finds any installed app by name
+        if let url = spotlightFindApp(named: trimmed) {
+            await MainActor.run { ws.openApplication(at: url, configuration: .init(), completionHandler: nil) }
+            return
+        }
+
+        // 3. Scan /Applications and ~/Applications
+        let searchDirs = FileManager.default.urls(for: .applicationDirectory, in: .localDomainMask)
+            + FileManager.default.urls(for: .applicationDirectory, in: .systemDomainMask)
+            + [URL(fileURLWithPath: "/Applications"), URL(fileURLWithPath: NSHomeDirectory() + "/Applications")]
+
+        for dir in searchDirs {
+            let candidate = dir.appendingPathComponent("\(trimmed).app")
+            if FileManager.default.fileExists(atPath: candidate.path) {
+                await MainActor.run { ws.openApplication(at: candidate, configuration: .init(), completionHandler: nil) }
                 return
             }
-
-            // Try by display name via Launch Services
-            let apps = FileManager.default.urls(for: .applicationDirectory, in: .localDomainMask)
-                + FileManager.default.urls(for: .applicationDirectory, in: .systemDomainMask)
-
-            for dir in apps {
-                let candidate = dir.appendingPathComponent("\(trimmed).app")
-                if FileManager.default.fileExists(atPath: candidate.path) {
-                    ws.openApplication(at: candidate, configuration: .init(), completionHandler: nil)
-                    return
-                }
-            }
-
-            // Last resort: NSWorkspace launchApplication
-            ws.launchApplication(trimmed)
         }
+
+        // 4. Last resort
+        await MainActor.run { ws.launchApplication(trimmed) }
+    }
+
+    private func spotlightFindApp(named name: String) -> URL? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/mdfind")
+        process.arguments = [
+            "kMDItemContentTypeTree == 'com.apple.application-bundle' && kMDItemDisplayName == '\(name)'cd"
+        ]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        try? process.run()
+        process.waitUntilExit()
+        let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let path = output.components(separatedBy: "\n").first(where: { !$0.isEmpty })
+        return path.map { URL(fileURLWithPath: $0) }
     }
 
     private func revealInFinder(path: String?) async {

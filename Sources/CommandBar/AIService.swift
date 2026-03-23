@@ -25,6 +25,34 @@ final class AIService {
         URL(string: "\(host)/api/chat")!
     }
 
+    // MARK: - Shared identity
+
+    /// Single source of truth for what CommandBar is and what it can do.
+    /// Injected into every prompt so the model always knows its boundaries.
+    private let identity = """
+    You are CommandBar, an AI-powered macOS command bar that runs locally via Ollama.
+    You are summoned with ⌘⌥A and appear as a floating overlay on the user's screen.
+
+    ## What you CAN do
+    - Open, launch, quit, or switch to any installed Mac application
+    - Reveal files and folders in Finder
+    - Adjust system volume (up, down, mute, unmute)
+    - Control media playback (play, pause, next, previous) via AppleScript
+    - Run saved workflows (named sequences of the above actions)
+    - Answer questions and explain things concisely
+
+    ## What you CANNOT do
+    - Browse the internet or fetch live data
+    - Send emails, messages, or notifications
+    - Read or write files (you can only reveal them in Finder)
+    - Control the internal UI of third-party apps beyond launching them
+    - Install or uninstall software
+    - Access cameras, microphones, or system sensors
+    - Anything requiring permissions CommandBar does not hold
+
+    If the user asks for something outside your capabilities, say so clearly in one sentence and suggest the closest thing you *can* do instead.
+    """
+
     // MARK: - Intent Classification
 
     func classifyIntent(_ query: String) async -> Intent {
@@ -33,7 +61,7 @@ final class AIService {
             "open", "launch", "start", "create", "make", "new",
             "move", "copy", "delete", "remove", "play", "pause",
             "close", "quit", "run", "execute", "switch", "show",
-            "hide", "enable", "disable", "install", "set up",
+            "hide", "enable", "disable", "set up",
             "take a", "empty", "set volume", "mute", "unmute",
         ]
         if actionPrefixes.contains(where: { lower.hasPrefix($0 + " ") || lower == $0 }) {
@@ -41,10 +69,12 @@ final class AIService {
         }
 
         let system = """
-        You are a one-word classifier embedded in a macOS command bar.
-        Reply with ONLY one word: "action" or "question".
-        "action" = user wants the computer to DO something.
-        "question" = user wants an answer or information.
+        \(identity)
+
+        Your task right now: classify the user's message as "action" or "question".
+        Reply with ONLY one word.
+        "action" = the user wants you to DO something on their Mac.
+        "question" = the user wants an answer, explanation, or information.
         """
         let result = (try? await sendSingle(system: system, user: query)) ?? "question"
         return Intent(isAction: result.lowercased().hasPrefix("action"), query: query)
@@ -59,11 +89,14 @@ final class AIService {
         onChunk: @escaping (String) async -> Void
     ) async {
         var system = """
-        You are a concise, helpful AI assistant embedded in a macOS command bar overlay.
-        - Be brief (≤150 words unless more is clearly needed).
-        - Use markdown sparingly (bold and inline code are fine).
+        \(identity)
+
+        ## Response style
+        - Be brief (≤150 words unless clearly more is needed).
+        - Use markdown sparingly — bold and inline code are fine.
         - Never open with "Certainly", "Sure", or "Of course".
         - Match the user's language.
+        - If the request is outside your capabilities, say so in one sentence and suggest what you *can* do.
         """
 
         if let app = appContext {
@@ -74,7 +107,7 @@ final class AIService {
         if let sel = selectedText, !sel.isEmpty {
             userContent = """
             The user has this text selected:
-            \"\"\"\
+            \"\"\"
             \(sel)
             \"\"\"
 
@@ -83,8 +116,8 @@ final class AIService {
         }
 
         let messages: [[String: String]] = [
-            ["role": "system",    "content": system],
-            ["role": "user",      "content": userContent],
+            ["role": "system", "content": system],
+            ["role": "user",   "content": userContent],
         ]
 
         guard let req = makeRequest(messages: messages, stream: true) else {
@@ -112,10 +145,14 @@ final class AIService {
 
     func generateSteps(for query: String) async -> [String] {
         let system = """
-        You produce step plans for a macOS automation agent.
+        \(identity)
+
+        Your task right now: produce an ordered step plan to carry out the user's request using ONLY your supported capabilities.
         Output ONLY a valid JSON array of short step descriptions (max 8 words each).
-        No preamble, no markdown, just the array.
-        Example: ["Open Finder","Navigate to Downloads","Sort by date modified"]
+        Each step must map to something CommandBar can actually execute: open an app, reveal in Finder, adjust volume, or control media.
+        If the request is impossible with your capabilities, return: ["Cannot do that — outside CommandBar's capabilities"]
+        No preamble, no markdown, just the JSON array.
+        Example: ["Open Finder", "Navigate to Downloads folder", "Sort by date modified"]
         """
         guard let raw  = try? await sendSingle(system: system, user: query),
               let data = raw.data(using: .utf8),
