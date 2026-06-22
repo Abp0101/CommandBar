@@ -9,13 +9,45 @@
 
 ---
 
+## Why this is agentic AI
+
+CommandBar is a local-first macOS AI agent that goes beyond text generation. It classifies user intent, plans multi-step actions, asks for confirmation, executes tools through native macOS APIs, and tracks execution progress through a formal state machine.
+
+Agent loop:
+
+1. User submits a natural-language command
+2. AI classifies the request as a question or action
+3. For actions, the system creates a step-by-step plan
+4. The user confirms before execution
+5. CommandBar executes each step using NSWorkspace, AppleScript or shell tools
+6. The interface tracks progress and completes or exits safely
+
+This demonstrates agentic AI concepts including planning, tool use, human-in-the-loop safety, workflow orchestration and local LLM integration.
+
+> Scope note: the confirmation flow applies to generated multi-step plans and saved workflows. Simple app-launch commands currently use a fast path and execute directly.
+
+## Agent architecture
+
+```text
+User command
+    → Intent classification
+        → Question? If yes, stream local LLM answer
+        → If action, create action plan
+            → Human confirmation
+            → Tool execution
+            → Step progress tracking
+            → Complete / cancel / fail safely
+```
+
+The agent is intentionally bounded: Ollama handles classification, answering and plan generation, while deterministic Swift code controls which native tools are available. See [Architecture](docs/architecture.md), [Agent design](docs/agent-design.md), [Evaluation plan](docs/evaluation-plan.md) and [Limitations](docs/limitations.md) for the detailed design and current boundaries.
+
 ## What it does
 
 | You type… | CommandBar does… |
 |-----------|-----------------|
 | `"What's the difference between async/await and GCD?"` | Streams a concise answer inline, then auto-hides |
 | `"Open Figma"` | Launches Figma immediately |
-| `"Move all PDFs from Downloads to Documents/Archive"` | Shows a step-by-step plan, asks you to confirm, then runs it |
+| `"Turn the volume down"` | Creates an action step and applies it through a native handler |
 | `"Start my coding environment"` | Runs your saved workflow (open Xcode, Terminal, Spotify) in sequence |
 | `"Explain this error: EXC_BAD_ACCESS"` | Gives you a short diagnosis right in the bar |
 
@@ -29,7 +61,7 @@
 - **Action planner** — multi-step confirmation with live step progress
 - **Saved workflows** — name any sequence and trigger it by phrase
 - **Keyboard-first** — Tab, ⎋, ↵ handle everything; no mouse required
-- **100% local** — no API keys, no data leaves your machine
+- **Local-first inference** — uses a configurable Ollama endpoint, which defaults to your machine
 
 ---
 
@@ -82,7 +114,7 @@ Then press **⌘⌥A** anywhere to summon the bar.
 
 ---
 
-## Architecture
+## Implementation map
 
 ```
 Sources/CommandBar/
@@ -106,6 +138,8 @@ Sources/CommandBar/
 idle ──[submit]──► thinking ──[is question]──► answering(text)
                           └──[is action]───► planning(steps) ──[confirm]──► executing(i, steps) ──► (auto-dismiss)
 ```
+
+Simple app-launch commands and eligible single-step app actions currently take a direct execution path. The diagram above describes the full planned-action path.
 
 ---
 
